@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PeriX.ai - System Architecture v7</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'PingFang SC', sans-serif; background: #0a1628; color: #c9d1d9; padding: 30px; }
+  h1 { color: #60a5fa; font-size: 28px; text-align: center; margin-bottom: 8px; }
+  .subtitle { color: #94a3b8; text-align: center; font-size: 14px; margin-bottom: 30px; }
+  .layer { margin: 12px 0; border-radius: 10px; overflow: hidden; }
+  .layer-header { padding: 14px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+  .layer-header:hover { filter: brightness(1.15); }
+  .layer-header h2 { font-size: 16px; display: flex; align-items: center; gap: 10px; }
+  .layer-header .tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.15); }
+  .layer-header .arrow { transition: transform 0.3s; font-size: 12px; color: rgba(255,255,255,0.6); }
+  .layer-header .arrow.open { transform: rotate(90deg); }
+  .layer-body { padding: 0 20px 20px; display: none; }
+  .layer-body.open { display: block; }
+  .subsystems { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .subsystem { flex: 1; min-width: 200px; background: #111d30; border-radius: 8px; padding: 14px; border-left: 3px solid; }
+  .subsystem h3 { font-size: 13px; margin-bottom: 8px; }
+  .subsystem ul { list-style: none; padding: 0; }
+  .subsystem li { font-size: 11px; color: #94a3b8; padding: 3px 0; padding-left: 14px; position: relative; }
+  .subsystem li::before { content: ""; position: absolute; left: 0; top: 9px; width: 6px; height: 6px; border-radius: 50%; }
+  .desc { font-size: 12px; color: #8b949e; margin-top: 8px; line-height: 1.6; }
+  .l-access .layer-header { background: #1e3a5f; }
+  .l-access .subsystem { border-left-color: #3b82f6; } .l-access .subsystem h3 { color: #60a5fa; } .l-access .subsystem li::before { background: #3b82f6; }
+  .l-edge .layer-header { background: #1a3340; }
+  .l-edge .subsystem { border-left-color: #06b6d4; } .l-edge .subsystem h3 { color: #22d3ee; } .l-edge .subsystem li::before { background: #06b6d4; }
+  .l-cloud .layer-header { background: #1a2744; }
+  .l-cloud .subsystem { border-left-color: #8b5cf6; } .l-cloud .subsystem h3 { color: #a78bfa; } .l-cloud .subsystem li::before { background: #8b5cf6; }
+  .l-data .layer-header { background: #1a3328; }
+  .l-data .subsystem { border-left-color: #10b981; } .l-data .subsystem h3 { color: #34d399; } .l-data .subsystem li::before { background: #10b981; }
+  .l-security .layer-header { background: #2d1a1a; }
+  .l-security .subsystem { border-left-color: #ef4444; } .l-security .subsystem h3 { color: #f87171; } .l-security .subsystem li::before { background: #ef4444; }
+  .l-infra .layer-header { background: #1f1a2e; }
+  .l-infra .subsystem { border-left-color: #f59e0b; } .l-infra .subsystem h3 { color: #fbbf24; } .l-infra .subsystem li::before { background: #f59e0b; }
+  .flow { text-align: center; color: #4a5568; font-size: 18px; letter-spacing: 8px; margin: 4px 0; }
+  .arch-wrapper { display: flex; gap: 16px; }
+  .side-label { writing-mode: vertical-rl; text-orientation: mixed; background: linear-gradient(180deg, #ef4444 0%, #f59e0b 100%); color: white; font-size: 12px; font-weight: bold; padding: 20px 8px; border-radius: 8px; display: flex; align-items: center; justify-content: center; letter-spacing: 2px; min-height: 200px; }
+  .main-content { flex: 1; }
+  .legend { margin-top: 30px; padding: 16px 20px; background: #111d30; border-radius: 8px; }
+  .legend h3 { color: #e2e8f0; font-size: 14px; margin-bottom: 10px; }
+  .legend-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #94a3b8; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .notes { margin-top: 20px; padding: 16px; background: #0d1926; border: 1px solid #1e3a5f; border-radius: 8px; }
+  .notes h3 { color: #60a5fa; font-size: 13px; margin-bottom: 8px; }
+  .notes p { font-size: 11px; color: #8b949e; line-height: 1.7; }
+  .new-badge { display: inline-block; font-size: 9px; background: #22c55e; color: #fff; padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<h1>PeriX.ai System Architecture</h1>
+<p class="subtitle">v8 | 逻辑分层 · 点击各层展开详细子系统</p>
+
+<div class="arch-wrapper">
+<div class="side-label">安全与治理（全局贯穿）</div>
+<div class="main-content">
+
+<!-- ==================== L1 接入与连接层 ==================== -->
+<div class="layer l-access">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L1</span> 接入与连接层 <span class="tag">用户触点 · 协议 · 消息平台 · Gateway</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">所有用户和外部系统的统一入口。原生客户端经由 L2 感知与执行层到达核心引擎；消息平台、API/SDK 及 Agent 协议直达 L3 核心引擎层。所有请求经过 Gateway 统一治理后进入后端服务。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3 id="sub-1"><a href="#detail-sub-1" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">原生客户端</a></h3>
+        <ul>
+          <li>iOS App (Swift / SwiftUI)</li>
+          <li>Android App (Kotlin / Compose)</li>
+          <li>Desktop Agent (Tauri)</li>
+          <li>Web Dashboard (React / Next.js)</li>
+          <li>CLI 工具 (synctl)</li>
+          <li>兼容前端 (Open WebUI / LobeChat)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-2"><a href="#detail-sub-2" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">消息平台适配</a></h3>
+        <ul>
+          <li>微信 / 企业微信</li>
+          <li>钉钉 / 飞书</li>
+          <li>Telegram / Discord / Slack</li>
+          <li>WhatsApp / Signal / LINE</li>
+          <li>iMessage (BlueBubbles)</li>
+          <li>统一会话路由 & 上下文管理</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-3"><a href="#detail-sub-3" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Agent 互操作协议</a></h3>
+        <ul>
+          <li>MCP (Model Context Protocol) — 工具/资源发现与调用</li>
+          <li>A2A (Agent-to-Agent) — 跨 Agent 通信</li>
+          <li>ACP (Agent Communication Protocol) — 编辑器/IDE 集成</li>
+          <li>MCP Server Cards / A2A Agent Cards (发现机制)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-4"><a href="#detail-sub-4" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">传输协议 & 开发者 SDK</a></h3>
+        <ul>
+          <li>REST API (OpenAI 兼容格式)</li>
+          <li>gRPC (强类型, 高吞吐)</li>
+          <li>WebSocket (双向实时交互)</li>
+          <li>SSE (流式推送, MCP 远程传输)</li>
+          <li>STDIO (MCP 本地传输)</li>
+          <li>Webhook (外部事件回调)</li>
+          <li>SDK (Python / TypeScript / Go)</li>
+          <li>OpenAPI / Protobuf 接口规范</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-5"><a href="#detail-sub-5" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Gateway（物理部署在云端）</a></h3>
+        <ul>
+          <li>请求路由 & 负载均衡</li>
+          <li>协议转换 (REST ↔ gRPC ↔ WS ↔ SSE)</li>
+          <li>SSL/TLS 终止</li>
+          <li>X-Session-Id 持久会话管理</li>
+          <li>服务发现 & 健康检查</li>
+          <li>请求/响应转换 & 聚合</li>
+          <li>治理策略执行点（策略定义在 L0）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow">&#9660; &#9660; &#9660;</div>
+
+<!-- ==================== L2 感知与执行层 ==================== -->
+<div class="layer l-edge">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L2</span> 感知与执行层 <span class="tag">情境感知 · 本地工具 · 交互渲染 · 隐私管理（物理部署在用户终端）</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">运行在用户终端设备上的感知和执行运行时（仅原生客户端路径经过本层；消息平台与 API 请求直达 L3）。负责采集情境信号、执行核心引擎下发的任务指令、渲染交互界面、管理本地隐私数据。通过 MCP 协议与 L3 形成"感知上报 → 决策 → 执行 → 反馈"闭环。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3 id="sub-6"><a href="#detail-sub-6" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">情境感知引擎</a></h3>
+        <ul>
+          <li>GPS / 地理围栏 / 位置变化</li>
+          <li>日历 / 日程 / 提醒事项监听</li>
+          <li>系统传感器 (运动, 光感, 电量)</li>
+          <li>屏幕状态 / App 使用行为</li>
+          <li>消息流监听 (用户授权)</li>
+          <li>语义快照 (Semantic Snapshot)<span class="new-badge">NEW</span></li>
+          <li>情境信号聚合 & 上报</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-7"><a href="#detail-sub-7" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">本地工具执行引擎</a></h3>
+        <ul>
+          <li>设备工具注册表 (文件/日历/通讯录/相册/摄像头)</li>
+          <li>设备权限 & 授权管控</li>
+          <li>MCP Server (暴露本地工具给 L3 调用)</li>
+          <li>App 间调用 (Deep Link / Intent / URL Scheme)</li>
+          <li>剪贴板 / 通知 / 系统设置</li>
+          <li>离线工具执行 & 结果缓存</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-8"><a href="#detail-sub-8" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">客户端运行时</a></h3>
+        <ul>
+          <li>MCP 协议引擎 (与 L3 的工具桥梁)</li>
+          <li>轻量 Agent 执行器 (L3 指令执行)</li>
+          <li>Lane Queue 三模式 (steer/followup/collect)<span class="new-badge">NEW</span></li>
+          <li>离线任务队列 & 重试</li>
+          <li>双向通信 (WS / SSE)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-9"><a href="#detail-sub-9" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">交互与渲染</a></h3>
+        <ul>
+          <li>Feed 卡片流 UI</li>
+          <li>主动推送消息展示</li>
+          <li>一键执行交互 (确认/回复/预约)</li>
+          <li>语音 / 文本 / 多模态输入</li>
+          <li>跨端一致体验</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-10"><a href="#detail-sub-10" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">本地数据管理</a></h3>
+        <ul>
+          <li>隐私数据沙箱 (通讯录/消息/健康)</li>
+          <li>端云双向同步引擎</li>
+          <li>本地缓存 & 离线存储</li>
+          <li>数据脱敏 & 授权管控</li>
+          <li>任务执行结果 & 反馈上报</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow">&#9660; 感知上报 &nbsp;&nbsp;&nbsp;&nbsp; &#9650; 决策下发</div>
+
+<!-- ==================== L3 核心引擎层 ==================== -->
+<div class="layer l-cloud">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L3</span> 核心引擎层 <span class="tag">编排 · 推理 · 记忆 · 工具 · 技能 · 推送 · 演进 · 市场（物理部署在云端集群）</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">核心智能引擎（所有请求必经本层，无论来源是原生客户端、消息平台还是 API）。管理面（API Server）和执行面（Actor Pool）分离。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3 id="sub-11"><a href="#detail-sub-11" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Agent 运行时</a></h3>
+        <ul>
+          <li>DAG 图执行器 (Graph Walker)</li>
+          <li>节点类型: LLM / Tool / Router / SubAgent / Transform</li>
+          <li>审批门控 (Human-in-the-Loop)<span class="new-badge">NEW</span></li>
+          <li>Checkpoint & 断点恢复<span class="new-badge">NEW</span></li>
+          <li>Lane Queue 串行保护 (防竞态)<span class="new-badge">NEW</span></li>
+          <li>Session 状态管理</li>
+          <li>执行追踪 & 回放 (Trace)</li>
+          <li>Agent 版本管理 & 回滚</li>
+          <li>Context Guard 四层体系 (预飞验证/结果限制/压缩/记忆保存)<span class="new-badge">NEW</span></li>
+          <li>压缩前自动记忆保存 (Silent Turn)<span class="new-badge">NEW</span></li>
+          <li>Agent 配置热加载</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-12"><a href="#detail-sub-12" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Orchestrator 编排引擎</a></h3>
+        <ul>
+          <li>Task Planner (意图解析 + 任务拆解)</li>
+          <li>Agent Router (智能路由 + 选择)</li>
+          <li>多 Agent 协同 (Sequential / Parallel / Supervisor)</li>
+          <li>Result Aggregator (结果聚合 + 冲突解决)</li>
+          <li>确定性工作流 DSL (YAML)<span class="new-badge">NEW</span></li>
+          <li>Typed Result 消息传递<span class="new-badge">NEW</span></li>
+          <li>CEL 条件表达式引擎</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-13"><a href="#detail-sub-13" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">工具引擎</a></h3>
+        <ul>
+          <li>内置工具集 (搜索/抓取/HTTP/代码执行)</li>
+          <li>MCP Server 调用 (云端工具链)</li>
+          <li>外部 API 集成 (天气/地图/航班/邮件/日历)</li>
+          <li>多沙箱后端 (容器/SSH/Serverless)<span class="new-badge">NEW</span></li>
+          <li>Tool Registry (注册/发现/版本管理)</li>
+          <li>调用本地工具 (via MCP → L2)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-14"><a href="#detail-sub-14" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Skills 运行时</a></h3>
+        <ul>
+          <li>Skill 加载 & 执行引擎</li>
+          <li>Skill 依赖解析 & 多工具编排</li>
+          <li>Skill 配置 & 参数注入</li>
+          <li>Skill 版本管理 & 热更新</li>
+          <li>Skill 权限 & 执行沙箱</li>
+          <li>Skill 自动生成管线<span class="new-badge">NEW</span></li>
+          <li>Skill 安全扫描 (上架审核)<span class="new-badge">NEW</span></li>
+          <li>插件生命周期钩子 (12个扩展点)<span class="new-badge">NEW</span></li>
+          <li>Skill 执行监控 & 日志</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-15"><a href="#detail-sub-15" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">记忆系统（分级架构）<span class="new-badge">重构</span></a></h3>
+        <ul>
+          <li>工作记忆 (当前会话上下文)</li>
+          <li>短期记忆 (近期重要信息, TTL)</li>
+          <li>长期记忆 (经"毕业"评估的持久知识)</li>
+          <li>记忆沉淀三阶段 (Light 摄入 / REM 主题提取 / Deep 评分毕业)<span class="new-badge">NEW</span></li>
+          <li>6 信号加权评分模型 (毕业门槛)<span class="new-badge">NEW</span></li>
+          <li>Grounded Backfill 历史回溯<span class="new-badge">NEW</span></li>
+          <li>旧: 记忆沉淀机制 (Dreams → 毕业 → 长期)</li>
+          <li>知识图谱 (结构化关系网络)</li>
+          <li>Embedding 向量检索</li>
+          <li>记忆压缩 & 蒸馏 & 遗忘</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-16"><a href="#detail-sub-16" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">用户建模系统<span class="new-badge">NEW</span></a></h3>
+        <ul>
+          <li>用户画像 (偏好/习惯/目标)</li>
+          <li>对话后异步推理提取</li>
+          <li>跨会话累积深化</li>
+          <li>行为模式识别</li>
+          <li>个性化策略生成</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-17"><a href="#detail-sub-17" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">主动推送引擎</a></h3>
+        <ul>
+          <li>情境触发器 (时间/地点/事件/行为/云端信号)</li>
+          <li>推送决策模型 (该不该推/推什么/何时推)</li>
+          <li>智能静默 (心跳检查 + 打扰度评估)<span class="new-badge">NEW</span></li>
+          <li>推送频率 & 优先级 & 疲劳度控制</li>
+          <li>多通道下发 (Push/WS/Bot/邮件)</li>
+          <li>推送效果追踪 & 反馈闭环</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-18"><a href="#detail-sub-18" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">自演进引擎</a></h3>
+        <ul>
+          <li>Prompt 优化 (变体生成 + A/B 测试)</li>
+          <li>架构演化 (GraphDiff 提议 + 审批)</li>
+          <li>知识积累 (执行学习 + 压缩)</li>
+          <li>Skill 自动生成 & 自改进<span class="new-badge">NEW</span></li>
+          <li>RLHF (用户反馈强化学习)</li>
+          <li>Agent 健康评分 (0-100)</li>
+          <li>演化策略 & 安全约束 & 回滚</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-19"><a href="#detail-sub-19" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">LLM 网关</a></h3>
+        <ul>
+          <li>多 Provider 路由 (OpenAI / Anthropic / GLM / Ollama)</li>
+          <li>Fallback & 重试 & 熔断</li>
+          <li>Token 预算 & 成本追踪</li>
+          <li>Prompt Cache & 语义去重</li>
+          <li>流式背压控制</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-20"><a href="#detail-sub-20" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">调度 & 执行基础设施</a></h3>
+        <ul>
+          <li>API Server (管理面, K8s HPA)</li>
+          <li>Actor Pool (执行面, 热池 Warm Pool)</li>
+          <li>Scheduler (请求路由 + 优先队列 + 背压)</li>
+          <li>Affinity (亲和性复用, 减少冷启动)</li>
+          <li>资源感知调度 (并发限制/内存感知)<span class="new-badge">NEW</span></li>
+          <li>Cron 定时调度 (分布式锁)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-21"><a href="#detail-sub-21" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Agent 市场（用户侧）</a></h3>
+        <ul>
+          <li>完整 Agent 发现 / 浏览 / 搜索</li>
+          <li>一键安装 & 配置</li>
+          <li>分类：效率 / 生活 / 学习 / 健康 / 财务</li>
+          <li>评分 / 评价 / 推荐</li>
+          <li>订阅 / 按次付费</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-22"><a href="#detail-sub-22" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">配置体系<span class="new-badge">NEW</span></a></h3>
+        <ul>
+          <li>SOUL.md (Agent 人格 / 行为边界)</li>
+          <li>STYLE.md (输出风格 / 语气)<span class="new-badge">NEW</span></li>
+          <li>级联配置解析 (Global / Agent / Workspace)<span class="new-badge">NEW</span></li>
+          <li>配置热更新 & 版本管理</li>
+          <li>默认配置 + 用户 Overlay 模式</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-23"><a href="#detail-sub-23" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Skill 市场（开发者侧）</a></h3>
+        <ul>
+          <li>Skill 模块发布 / 审核 / 版本管理</li>
+          <li>MCP Server 注册 & 分发</li>
+          <li>SKILL.md 开放格式规范</li>
+          <li>Plugin SDK (Gateway 扩展开发)</li>
+          <li>SOUL.md (Agent 人格/行为配置)</li>
+          <li>安全扫描 (威胁规则自动检测)<span class="new-badge">NEW</span></li>
+          <li>收入分成 & 结算</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow">&#9660; &#9660; &#9660;</div>
+
+<!-- ==================== L4 数据与存储层 ==================== -->
+<div class="layer l-data">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L4</span> 数据与存储层 <span class="tag">三层存储 + 向量库 + 消息总线</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">三层存储架构（结构化 + 缓存 + 对象），辅以向量数据库和消息队列实现语义检索与异步解耦。所有数据严格按 UserID/AgentID 隔离。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3 id="sub-24"><a href="#detail-sub-24" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">结构化存储 (PostgreSQL)</a></h3>
+        <ul>
+          <li>用户 & API Key</li>
+          <li>Agent 元数据 & 版本</li>
+          <li>用户画像 & 偏好模型<span class="new-badge">NEW</span></li>
+          <li>演进记录 & 提议</li>
+          <li>Cron 作业定义</li>
+          <li>NoSQL 兼容模式 (无 FK/Join)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-25"><a href="#detail-sub-25" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">缓存层 (Redis Cluster)</a></h3>
+        <ul>
+          <li>工作记忆 & Session 状态 (TTL)</li>
+          <li>短期记忆 (近期重要信息)<span class="new-badge">NEW</span></li>
+          <li>Actor Pool 状态 & 亲和性</li>
+          <li>分布式锁 (Cron Leader / VFS)</li>
+          <li>Pub/Sub (Agent 间通信)</li>
+          <li>Agent 健康评分缓存</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-26"><a href="#detail-sub-26" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">对象存储 (S3)</a></h3>
+        <ul>
+          <li>执行轨迹 (Trace JSON)</li>
+          <li>长期记忆 & 知识条目</li>
+          <li>Agent 配置快照 (版本化)</li>
+          <li>Prompt 变体存储</li>
+          <li>用户文件 (VFS)</li>
+          <li>Checkpoint 快照<span class="new-badge">NEW</span></li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-27"><a href="#detail-sub-27" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">向量数据库</a></h3>
+        <ul>
+          <li>知识检索 (Embedding Search)</li>
+          <li>用户画像向量</li>
+          <li>语义相似度匹配</li>
+          <li>记忆关联检索<span class="new-badge">NEW</span></li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-28"><a href="#detail-sub-28" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">消息队列 (Kafka / NATS)</a></h3>
+        <ul>
+          <li>执行事件流 (异步)</li>
+          <li>演进引擎输入管道</li>
+          <li>推送引擎事件触发</li>
+          <li>记忆沉淀管道 (Dreams → 毕业)<span class="new-badge">NEW</span></li>
+          <li>审计日志流</li>
+          <li>跨服务解耦</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow">&#9660; &#9660; &#9660;</div>
+
+<!-- ==================== L5 基础设施层 ==================== -->
+<div class="layer l-infra">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L5</span> 基础设施层 <span class="tag">容器编排 · 可观测性 · CI/CD · 高可用</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">云原生基础设施，基于 Kubernetes 编排，包含可观测性、CI/CD 和多区域部署能力。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3 id="sub-29"><a href="#detail-sub-29" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">容器编排 (K8s)</a></h3>
+        <ul>
+          <li>Server Deployment + HPA</li>
+          <li>Actor Pool (动态 Pod 管理)</li>
+          <li>NetworkPolicy (沙箱隔离)</li>
+          <li>RBAC & ServiceAccount</li>
+          <li>Secrets 管理 (Vault)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-30"><a href="#detail-sub-30" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">可观测性</a></h3>
+        <ul>
+          <li>Metrics (Prometheus + Grafana)</li>
+          <li>Tracing (OpenTelemetry + Jaeger)</li>
+          <li>Logging (slog + ELK/Loki)</li>
+          <li>Agent 行为级监控 (决策路径/Skill 使用)<span class="new-badge">NEW</span></li>
+          <li>告警规则 & 值班通知</li>
+          <li>SLI/SLO 定义</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-31"><a href="#detail-sub-31" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">CI/CD & 发布</a></h3>
+        <ul>
+          <li>CI Pipeline (Build/Test/Lint)</li>
+          <li>容器镜像构建 & 推送</li>
+          <li>蓝绿 / 金丝雀发布</li>
+          <li>Feature Flag (渐进发布)</li>
+          <li>安全审计 CLI (自动化扫描)<span class="new-badge">NEW</span></li>
+          <li>Staging 环境</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-32"><a href="#detail-sub-32" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">多区域 & 高可用</a></h3>
+        <ul>
+          <li>多 AZ 部署</li>
+          <li>数据库主从复制</li>
+          <li>S3 跨区域同步</li>
+          <li>CDN (静态资源 + 文件)</li>
+          <li>灾备 & 故障切换</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- main-content -->
+</div><!-- arch-wrapper -->
+
+<!-- ==================== L0 安全与治理层 ==================== -->
+<div class="layer l-security" style="margin-top: 20px;">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L0</span> 安全与治理层 <span class="tag">全局贯穿 · 认证 · 授权 · 数据 · AI安全 · 合规</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">贯穿所有层的横切关注点。包含身份认证、权限管理、Agent 治理、服务治理、数据安全、Agent 安全、合规与审计七大域。各层组件作为策略执行点，策略定义和管理统一在本层。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3 id="sub-33"><a href="#detail-sub-33" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">身份认证 (Authentication)</a></h3>
+        <ul>
+          <li>OAuth2 / OIDC 统一认证</li>
+          <li>API Key 签发 & 管理</li>
+          <li>SSO 企业单点登录</li>
+          <li>Token 签发 / 刷新 / 轮换 / 撤销</li>
+          <li>多因素认证 (MFA)</li>
+          <li>设备指纹 & 可信设备管理</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-34"><a href="#detail-sub-34" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">权限管理 (Authorization)</a></h3>
+        <ul>
+          <li>RBAC 角色权限模型</li>
+          <li>API Key Scope 控制 (读/写/执行)</li>
+          <li>组织 / 团队 / 成员层级</li>
+          <li>Agent 级别权限 (谁能用/谁能改)</li>
+          <li>Tool & Skill 执行权限</li>
+          <li>资源配额 & 用量策略</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-35"><a href="#detail-sub-35" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Agent 治理<span class="new-badge">NEW</span></a></h3>
+        <ul>
+          <li>Agent 生命周期管理 (创建/发布/下线/归档)</li>
+          <li>Agent 发布 & 灰度策略</li>
+          <li>Agent 行为策略 & 能力边界</li>
+          <li>Agent 资源配额 (Token/调用次数/并发)</li>
+          <li>Agent 版本管理 & 回滚策略</li>
+          <li>Agent 演化审批流</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-36"><a href="#detail-sub-36" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">服务治理<span class="new-badge">NEW</span></a></h3>
+        <ul>
+          <li>限流 & 配额 (per-user / per-agent / per-token)</li>
+          <li>DDoS 防护 & IP 黑白名单</li>
+          <li>灰度发布 & 流量染色</li>
+          <li>API 版本管理 & 废弃策略</li>
+          <li>熔断 & 降级策略</li>
+          <li>请求日志 & 链路追踪</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-37"><a href="#detail-sub-37" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">数据安全</a></h3>
+        <ul>
+          <li>Tenant 数据严格隔离</li>
+          <li>传输加密 (TLS 1.3)</li>
+          <li>静态加密 (AES-256)</li>
+          <li>PII 检测 & 自动脱敏</li>
+          <li>数据生命周期管理 & 过期清除</li>
+          <li>VFS 沙箱 & 文件访问控制</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-38"><a href="#detail-sub-38" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">Agent 安全 (Guardrails)<span class="new-badge">改名</span></a></h3>
+        <ul>
+          <li>Prompt Injection 防御</li>
+          <li>输出内容审核 (Content Moderation)</li>
+          <li>有害内容过滤 & 分级</li>
+          <li>Agent 行为约束 (安全策略边界)</li>
+          <li>执行沙箱 (cgroup / 网络 / 文件系统)</li>
+          <li>Tool 调用风险评估</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3 id="sub-39"><a href="#detail-sub-39" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">合规与审计</a></h3>
+        <ul>
+          <li>操作审计日志 (不可篡改)</li>
+          <li>数据合规 (GDPR / 个保法 / CCPA)</li>
+          <li>模型版本管理 & 溯源</li>
+          <li>执行回放 & 取证</li>
+          <li>合规报告自动生成</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <h3 id="sub-40"><a href="#detail-sub-40" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">图例</a></h3>
+  <div class="legend-grid">
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>L1 接入与连接层</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>L2 感知与执行层</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>L3 核心引擎层</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>L4 数据与存储层</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>L5 基础设施层</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>L0 安全与治理层（7 域：认证/授权/Agent治理/服务治理/数据安全/Agent安全/合规）</div>
+  </div>
+</div>
+
+<!-- Notes -->
+<div class="notes">
+  <h3 id="sub-41"><a href="#detail-sub-41" style="color:inherit;text-decoration:none;border-bottom:1px dashed rgba(255,255,255,0.3);">架构设计原则</a></h3>
+  <p>
+    <strong>1. 感知-决策-执行闭环</strong>：L2 感知 → L3 决策 → L2 执行 → 反馈学习，形成完整数据闭环。消息平台/API 路径跳过 L2 直达 L3。<br>
+    <strong>2. 逻辑分层 ≠ 物理部署</strong>：层按功能职责划分，非物理位置。L1 Gateway 物理在云端集群，L2 物理在用户终端，逻辑上各自独立。<br>
+    <strong>3. 分级记忆 + 用户建模</strong>：工作记忆 → 短期记忆 → 长期记忆（毕业机制），独立用户画像系统持续深化理解。<br>
+    <strong>4. 双进程分离</strong>：API Server 负责管理面，Actor Pool 负责执行面，解耦扩展。<br>
+    <strong>5. 安全纵深</strong>：从网关鉴权 → 数据隔离 → AI 护栏 → 执行沙箱 → 审计日志，层层设防。<br>
+    <strong>6. 自演进四维度</strong>：Prompt 优化 + 架构演化 + 知识积累 + Skill 自动生成，Agent 持续自我进化。<br>
+    <strong>7. 事件驱动解耦</strong>：消息队列连接执行层、演进引擎、推送引擎、记忆沉淀管道，异步处理。
+  </p>
+</div>
+
+<!-- v7 Changelog -->
+<div class="notes" style="margin-top: 12px; border-color: #22c55e;">
+  <h3 style="color: #22c55e;">v8 变更日志（vs v7）</h3>
+  <p>
+    <strong>v7 全部变更保留</strong>（层名逻辑化、记忆重构、用户建模、审批门控、Checkpoint、智能静默、Skill 自生成等）。<br><br>
+    <strong>v8 新增变更：</strong><br>
+    <strong>L0 治理层重构（5域 → 7域）</strong>：<br>
+    &nbsp;&nbsp;• "AI 安全" → <strong>Agent 安全</strong>（精准定位 Agent 行为层面安全）<br>
+    &nbsp;&nbsp;• 新增 <strong>Agent 治理</strong>：Agent 生命周期、发布灰度、行为边界、资源配额、版本回滚、演化审批<br>
+    &nbsp;&nbsp;• 新增 <strong>服务治理</strong>：限流配额、DDoS、灰度流量、API 版本、熔断降级、链路追踪<br>
+    &nbsp;&nbsp;• "合规与审计"中 Agent 演化审批迁入 Agent 治理<br>
+    <strong>L1 Gateway 瘦身</strong>：治理类内容迁出至 L0，Gateway 仅保留纯功能（路由、协议转换、SSL、会话、服务发现），标注"治理策略执行点（策略定义在 L0）"。
+  </p>
+</div>
+
+<script>
+function toggle(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('.arrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+document.querySelectorAll('.layer-header').forEach(h => toggle(h));
+</script>
+
+<div id="spec-toc" style="margin-top:40px;padding:20px;background:#0d1926;border:1px solid #1e3a5f;border-radius:8px;">
+<h2 style="color:#60a5fa;font-size:20px;margin-bottom:16px;">详细规格文档 - 目录</h2>
+<div style="margin-top:10px;"><strong style="color:#3b82f6;">L1 接入与连接层</strong></div>
+<ul style="list-style:none;padding-left:16px;margin:4px 0;">
+<li style="margin:2px 0;"><a href="#detail-sub-1" style="color:#8b949e;text-decoration:none;font-size:12px;">原生客户端</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-2" style="color:#8b949e;text-decoration:none;font-size:12px;">消息平台适配</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-3" style="color:#8b949e;text-decoration:none;font-size:12px;">Agent 互操作协议</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-4" style="color:#8b949e;text-decoration:none;font-size:12px;">传输协议 & 开发者 SDK</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-5" style="color:#8b949e;text-decoration:none;font-size:12px;">Gateway（物理部署在云端）</a></li>
+</ul>
+<div style="margin-top:10px;"><strong style="color:#06b6d4;">L2 感知与执行层</strong></div>
+<ul style="list-style:none;padding-left:16px;margin:4px 0;">
+<li style="margin:2px 0;"><a href="#detail-sub-6" style="color:#8b949e;text-decoration:none;font-size:12px;">情境感知引擎</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-7" style="color:#8b949e;text-decoration:none;font-size:12px;">本地工具执行引擎</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-8" style="color:#8b949e;text-decoration:none;font-size:12px;">客户端运行时</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-9" style="color:#8b949e;text-decoration:none;font-size:12px;">交互与渲染</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-10" style="color:#8b949e;text-decoration:none;font-size:12px;">本地数据管理</a></li>
+</ul>
+<div style="margin-top:10px;"><strong style="color:#8b5cf6;">L3 核心引擎层</strong></div>
+<ul style="list-style:none;padding-left:16px;margin:4px 0;">
+<li style="margin:2px 0;"><a href="#detail-sub-11" style="color:#8b949e;text-decoration:none;font-size:12px;">Agent 运行时</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-12" style="color:#8b949e;text-decoration:none;font-size:12px;">Orchestrator 编排引擎</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-13" style="color:#8b949e;text-decoration:none;font-size:12px;">工具引擎</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-14" style="color:#8b949e;text-decoration:none;font-size:12px;">Skills 运行时</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-15" style="color:#8b949e;text-decoration:none;font-size:12px;">记忆系统（分级架构）重构</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-16" style="color:#8b949e;text-decoration:none;font-size:12px;">用户建模系统NEW</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-17" style="color:#8b949e;text-decoration:none;font-size:12px;">主动推送引擎</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-18" style="color:#8b949e;text-decoration:none;font-size:12px;">自演进引擎</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-19" style="color:#8b949e;text-decoration:none;font-size:12px;">LLM 网关</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-20" style="color:#8b949e;text-decoration:none;font-size:12px;">调度 & 执行基础设施</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-21" style="color:#8b949e;text-decoration:none;font-size:12px;">Agent 市场（用户侧）</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-22" style="color:#8b949e;text-decoration:none;font-size:12px;">配置体系NEW</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-23" style="color:#8b949e;text-decoration:none;font-size:12px;">Skill 市场（开发者侧）</a></li>
+</ul>
+<div style="margin-top:10px;"><strong style="color:#10b981;">L4 数据与存储层</strong></div>
+<ul style="list-style:none;padding-left:16px;margin:4px 0;">
+<li style="margin:2px 0;"><a href="#detail-sub-24" style="color:#8b949e;text-decoration:none;font-size:12px;">结构化存储 (PostgreSQL)</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-25" style="color:#8b949e;text-decoration:none;font-size:12px;">缓存层 (Redis Cluster)</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-26" style="color:#8b949e;text-decoration:none;font-size:12px;">对象存储 (S3)</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-27" style="color:#8b949e;text-decoration:none;font-size:12px;">向量数据库</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-28" style="color:#8b949e;text-decoration:none;font-size:12px;">消息队列 (Kafka / NATS)</a></li>
+</ul>
+<div style="margin-top:10px;"><strong style="color:#f59e0b;">L5 基础设施层</strong></div>
+<ul style="list-style:none;padding-left:16px;margin:4px 0;">
+<li style="margin:2px 0;"><a href="#detail-sub-29" style="color:#8b949e;text-decoration:none;font-size:12px;">容器编排 (K8s)</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-30" style="color:#8b949e;text-decoration:none;font-size:12px;">可观测性</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-31" style="color:#8b949e;text-decoration:none;font-size:12px;">CI/CD & 发布</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-32" style="color:#8b949e;text-decoration:none;font-size:12px;">多区域 & 高可用</a></li>
+</ul>
+<div style="margin-top:10px;"><strong style="color:#ef4444;">L0 安全与治理层</strong></div>
+<ul style="list-style:none;padding-left:16px;margin:4px 0;">
+<li style="margin:2px 0;"><a href="#detail-sub-33" style="color:#8b949e;text-decoration:none;font-size:12px;">身份认证 (Authentication)</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-34" style="color:#8b949e;text-decoration:none;font-size:12px;">权限管理 (Authorization)</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-35" style="color:#8b949e;text-decoration:none;font-size:12px;">Agent 治理NEW</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-36" style="color:#8b949e;text-decoration:none;font-size:12px;">服务治理NEW</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-37" style="color:#8b949e;text-decoration:none;font-size:12px;">数据安全</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-38" style="color:#8b949e;text-decoration:none;font-size:12px;">Agent 安全 (Guardrails)改名</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-39" style="color:#8b949e;text-decoration:none;font-size:12px;">合规与审计</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-40" style="color:#8b949e;text-decoration:none;font-size:12px;">图例</a></li>
+<li style="margin:2px 0;"><a href="#detail-sub-41" style="color:#8b949e;text-decoration:none;font-size:12px;">架构设计原则</a></li>
+</ul>
+</div>
+
+<div id="detailed-specs" style="margin-top:30px;">
+<h2 style="color:#60a5fa;font-size:22px;text-align:center;margin-bottom:30px;padding-bottom:12px;border-bottom:1px solid #21262d;">详细规格文档</h2>
+<p style="font-size:12px;color:#8b949e;text-align:center;margin-bottom:30px;">每个子系统的详细说明、接口定义和设计参考。点击标题 ↑ 返回架构图。</p>
+<div style="margin-top:40px;padding-top:16px;border-top:2px solid #3b82f6;">
+<h3 style="color:#3b82f6;font-size:18px;margin-bottom:16px;">L1 接入与连接层</h3>
+<div id="detail-sub-1" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #3b82f6;">
+<h4 style="color:#3b82f6;font-size:14px;margin-bottom:8px;"><a href="#sub-1" style="color:#3b82f6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 原生客户端</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-2" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #3b82f6;">
+<h4 style="color:#3b82f6;font-size:14px;margin-bottom:8px;"><a href="#sub-2" style="color:#3b82f6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 消息平台适配</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-3" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #3b82f6;">
+<h4 style="color:#3b82f6;font-size:14px;margin-bottom:8px;"><a href="#sub-3" style="color:#3b82f6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Agent 互操作协议</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-4" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #3b82f6;">
+<h4 style="color:#3b82f6;font-size:14px;margin-bottom:8px;"><a href="#sub-4" style="color:#3b82f6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 传输协议 & 开发者 SDK</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-5" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #3b82f6;">
+<h4 style="color:#3b82f6;font-size:14px;margin-bottom:8px;"><a href="#sub-5" style="color:#3b82f6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Gateway（物理部署在云端）</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+</div>
+<div style="margin-top:40px;padding-top:16px;border-top:2px solid #06b6d4;">
+<h3 style="color:#06b6d4;font-size:18px;margin-bottom:16px;">L2 感知与执行层</h3>
+<div id="detail-sub-6" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #06b6d4;">
+<h4 style="color:#06b6d4;font-size:14px;margin-bottom:8px;"><a href="#sub-6" style="color:#06b6d4;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 情境感知引擎</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-7" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #06b6d4;">
+<h4 style="color:#06b6d4;font-size:14px;margin-bottom:8px;"><a href="#sub-7" style="color:#06b6d4;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 本地工具执行引擎</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-8" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #06b6d4;">
+<h4 style="color:#06b6d4;font-size:14px;margin-bottom:8px;"><a href="#sub-8" style="color:#06b6d4;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 客户端运行时</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-9" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #06b6d4;">
+<h4 style="color:#06b6d4;font-size:14px;margin-bottom:8px;"><a href="#sub-9" style="color:#06b6d4;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 交互与渲染</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-10" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #06b6d4;">
+<h4 style="color:#06b6d4;font-size:14px;margin-bottom:8px;"><a href="#sub-10" style="color:#06b6d4;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 本地数据管理</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+</div>
+<div style="margin-top:40px;padding-top:16px;border-top:2px solid #8b5cf6;">
+<h3 style="color:#8b5cf6;font-size:18px;margin-bottom:16px;">L3 核心引擎层</h3>
+<div id="detail-sub-11" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-11" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Agent 运行时</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-12" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-12" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Orchestrator 编排引擎</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-13" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-13" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 工具引擎</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-14" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-14" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Skills 运行时</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-15" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-15" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 记忆系统（分级架构）重构</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-16" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-16" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 用户建模系统NEW</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-17" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-17" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 主动推送引擎</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-18" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-18" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 自演进引擎</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-19" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-19" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; LLM 网关</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-20" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-20" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 调度 & 执行基础设施</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-21" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-21" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Agent 市场（用户侧）</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-22" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-22" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 配置体系NEW</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-23" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #8b5cf6;">
+<h4 style="color:#8b5cf6;font-size:14px;margin-bottom:8px;"><a href="#sub-23" style="color:#8b5cf6;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Skill 市场（开发者侧）</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+</div>
+<div style="margin-top:40px;padding-top:16px;border-top:2px solid #10b981;">
+<h3 style="color:#10b981;font-size:18px;margin-bottom:16px;">L4 数据与存储层</h3>
+<div id="detail-sub-24" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #10b981;">
+<h4 style="color:#10b981;font-size:14px;margin-bottom:8px;"><a href="#sub-24" style="color:#10b981;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 结构化存储 (PostgreSQL)</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-25" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #10b981;">
+<h4 style="color:#10b981;font-size:14px;margin-bottom:8px;"><a href="#sub-25" style="color:#10b981;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 缓存层 (Redis Cluster)</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-26" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #10b981;">
+<h4 style="color:#10b981;font-size:14px;margin-bottom:8px;"><a href="#sub-26" style="color:#10b981;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 对象存储 (S3)</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-27" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #10b981;">
+<h4 style="color:#10b981;font-size:14px;margin-bottom:8px;"><a href="#sub-27" style="color:#10b981;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 向量数据库</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-28" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #10b981;">
+<h4 style="color:#10b981;font-size:14px;margin-bottom:8px;"><a href="#sub-28" style="color:#10b981;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 消息队列 (Kafka / NATS)</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+</div>
+<div style="margin-top:40px;padding-top:16px;border-top:2px solid #f59e0b;">
+<h3 style="color:#f59e0b;font-size:18px;margin-bottom:16px;">L5 基础设施层</h3>
+<div id="detail-sub-29" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #f59e0b;">
+<h4 style="color:#f59e0b;font-size:14px;margin-bottom:8px;"><a href="#sub-29" style="color:#f59e0b;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 容器编排 (K8s)</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-30" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #f59e0b;">
+<h4 style="color:#f59e0b;font-size:14px;margin-bottom:8px;"><a href="#sub-30" style="color:#f59e0b;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 可观测性</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-31" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #f59e0b;">
+<h4 style="color:#f59e0b;font-size:14px;margin-bottom:8px;"><a href="#sub-31" style="color:#f59e0b;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; CI/CD & 发布</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-32" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #f59e0b;">
+<h4 style="color:#f59e0b;font-size:14px;margin-bottom:8px;"><a href="#sub-32" style="color:#f59e0b;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 多区域 & 高可用</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+</div>
+<div style="margin-top:40px;padding-top:16px;border-top:2px solid #ef4444;">
+<h3 style="color:#ef4444;font-size:18px;margin-bottom:16px;">L0 安全与治理层</h3>
+<div id="detail-sub-33" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-33" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 身份认证 (Authentication)</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-34" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-34" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 权限管理 (Authorization)</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-35" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-35" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Agent 治理NEW</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-36" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-36" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 服务治理NEW</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-37" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-37" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 数据安全</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-38" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-38" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; Agent 安全 (Guardrails)改名</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-39" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-39" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 合规与审计</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-40" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-40" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 图例</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+<div id="detail-sub-41" style="margin:20px 0;padding:16px;background:#111d30;border-radius:8px;border-left:3px solid #ef4444;">
+<h4 style="color:#ef4444;font-size:14px;margin-bottom:8px;"><a href="#sub-41" style="color:#ef4444;text-decoration:none;">&#8593; 返回架构图</a> &nbsp; 架构设计原则</h4>
+<p style="font-size:11px;color:#6b7280;">[待补充详细接口定义和设计说明]</p>
+</div>
+</div>
+</div>
+
+</body>
+</html>

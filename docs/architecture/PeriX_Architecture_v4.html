@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PeriX.ai - System Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'PingFang SC', sans-serif; background: #0a1628; color: #c9d1d9; padding: 30px; }
+  h1 { color: #60a5fa; font-size: 28px; text-align: center; margin-bottom: 8px; }
+  .subtitle { color: #94a3b8; text-align: center; font-size: 14px; margin-bottom: 30px; }
+
+  /* Architecture layers */
+  .layer { margin: 12px 0; border-radius: 10px; overflow: hidden; }
+  .layer-header { padding: 14px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+  .layer-header:hover { filter: brightness(1.15); }
+  .layer-header h2 { font-size: 16px; display: flex; align-items: center; gap: 10px; }
+  .layer-header .tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.15); }
+  .layer-header .arrow { transition: transform 0.3s; font-size: 12px; color: rgba(255,255,255,0.6); }
+  .layer-header .arrow.open { transform: rotate(90deg); }
+  .layer-body { padding: 0 20px 20px; display: none; }
+  .layer-body.open { display: block; }
+
+  /* Subsystem cards */
+  .subsystems { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .subsystem { flex: 1; min-width: 200px; background: #111d30; border-radius: 8px; padding: 14px; border-left: 3px solid; }
+  .subsystem h3 { font-size: 13px; margin-bottom: 8px; }
+  .subsystem ul { list-style: none; padding: 0; }
+  .subsystem li { font-size: 11px; color: #94a3b8; padding: 3px 0; padding-left: 14px; position: relative; }
+  .subsystem li::before { content: ""; position: absolute; left: 0; top: 9px; width: 6px; height: 6px; border-radius: 50%; }
+  .desc { font-size: 12px; color: #8b949e; margin-top: 8px; line-height: 1.6; }
+
+  /* Color themes per layer */
+  .l-access .layer-header { background: #1e3a5f; }
+  .l-access .subsystem { border-left-color: #3b82f6; }
+  .l-access .subsystem h3 { color: #60a5fa; }
+  .l-access .subsystem li::before { background: #3b82f6; }
+
+  .l-edge .layer-header { background: #1a3340; }
+  .l-edge .subsystem { border-left-color: #06b6d4; }
+  .l-edge .subsystem h3 { color: #22d3ee; }
+  .l-edge .subsystem li::before { background: #06b6d4; }
+
+  .l-cloud .layer-header { background: #1a2744; }
+  .l-cloud .subsystem { border-left-color: #8b5cf6; }
+  .l-cloud .subsystem h3 { color: #a78bfa; }
+  .l-cloud .subsystem li::before { background: #8b5cf6; }
+
+  .l-data .layer-header { background: #1a3328; }
+  .l-data .subsystem { border-left-color: #10b981; }
+  .l-data .subsystem h3 { color: #34d399; }
+  .l-data .subsystem li::before { background: #10b981; }
+
+  .l-security .layer-header { background: #2d1a1a; }
+  .l-security .subsystem { border-left-color: #ef4444; }
+  .l-security .subsystem h3 { color: #f87171; }
+  .l-security .subsystem li::before { background: #ef4444; }
+
+  .l-infra .layer-header { background: #1f1a2e; }
+  .l-infra .subsystem { border-left-color: #f59e0b; }
+  .l-infra .subsystem h3 { color: #fbbf24; }
+  .l-infra .subsystem li::before { background: #f59e0b; }
+
+  /* Flow arrows */
+  .flow { text-align: center; color: #4a5568; font-size: 18px; letter-spacing: 8px; margin: 4px 0; }
+
+  /* Side label */
+  .arch-wrapper { display: flex; gap: 16px; }
+  .side-label { writing-mode: vertical-rl; text-orientation: mixed; background: linear-gradient(180deg, #ef4444 0%, #f59e0b 100%); color: white; font-size: 12px; font-weight: bold; padding: 20px 8px; border-radius: 8px; display: flex; align-items: center; justify-content: center; letter-spacing: 2px; min-height: 200px; }
+  .main-content { flex: 1; }
+
+  /* Legend */
+  .legend { margin-top: 30px; padding: 16px 20px; background: #111d30; border-radius: 8px; }
+  .legend h3 { color: #e2e8f0; font-size: 14px; margin-bottom: 10px; }
+  .legend-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #94a3b8; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* Notes */
+  .notes { margin-top: 20px; padding: 16px; background: #0d1926; border: 1px solid #1e3a5f; border-radius: 8px; }
+  .notes h3 { color: #60a5fa; font-size: 13px; margin-bottom: 8px; }
+  .notes p { font-size: 11px; color: #8b949e; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<h1>PeriX.ai System Architecture</h1>
+<p class="subtitle">Level 0 ~ Level 2 | 点击各层展开详细子系统</p>
+
+<div class="arch-wrapper">
+
+<!-- Side label: Security & Governance -->
+<div class="side-label">安全与治理（全局贯穿）</div>
+
+<div class="main-content">
+
+<!-- Layer 1: Access -->
+<div class="layer l-access">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L1</span> 多端接入层 <span class="tag">用户触点 + 协议网关 + 生态接入</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">用户和外部系统通过多种终端、协议和平台进入 PeriX 生态。参考 OpenClaw 25+ 渠道网关和 Hermes 15+ 平台适配器架构，覆盖原生客户端、消息平台、Agent 互操作协议、开发者 API 和流量治理。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3>原生客户端</h3>
+        <ul>
+          <li>iOS App (Swift / SwiftUI)</li>
+          <li>Android App (Kotlin / Compose)</li>
+          <li>Desktop Agent (Tauri)</li>
+          <li>Web Dashboard (React / Next.js)</li>
+          <li>CLI 工具 (synctl)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>消息平台网关</h3>
+        <ul>
+          <li>微信 / 企业微信</li>
+          <li>钉钉 / 飞书</li>
+          <li>Telegram / Discord / Slack</li>
+          <li>WhatsApp / Signal / LINE</li>
+          <li>iMessage (BlueBubbles)</li>
+          <li>统一会话路由 & 上下文管理</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>Agent 互操作协议</h3>
+        <ul>
+          <li>MCP (Model Context Protocol) — 工具/资源发现与调用</li>
+          <li>A2A (Agent-to-Agent) — 跨 Agent 通信, JSON-RPC/gRPC</li>
+          <li>ACP (Agent Communication Protocol) — 编辑器/IDE 集成</li>
+          <li>MCP Server Cards (.well-known 发现)</li>
+          <li>A2A Agent Cards (能力声明)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>传输协议 & API</h3>
+        <ul>
+          <li>REST API (OpenAI 兼容格式)</li>
+          <li>gRPC (强类型, 高吞吐)</li>
+          <li>WebSocket (双向实时交互)</li>
+          <li>SSE (流式推送, MCP 远程传输)</li>
+          <li>STDIO (MCP 本地传输)</li>
+          <li>Webhook (外部事件回调)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>开发者生态</h3>
+        <ul>
+          <li>SDK (Python / TypeScript / Go)</li>
+          <li>Plugin SDK (Gateway 扩展)</li>
+          <li>Skills 开发框架 (SKILL.md)</li>
+          <li>SOUL.md (Agent 人格配置)</li>
+          <li>OpenAPI / Protobuf 规范</li>
+          <li>前端兼容 (Open WebUI / LobeChat)</li>
+        </ul>
+      </div>
+    </div>
+    <!-- Horizontal governance sub-layer -->
+    <div style="margin-top:14px; background:#0d2040; border-radius:8px; padding:14px 16px; border:1px solid #1e3a5f;">
+      <div style="font-size:12px; color:#60a5fa; font-weight:bold; margin-bottom:10px;">▸ 横向治理能力（贯穿所有接入方式）</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:150px;">
+          <div style="font-size:11px; color:#7eb8e0; font-weight:bold; margin-bottom:4px;">鉴权与身份</div>
+          <div style="font-size:10px; color:#94a3b8;">OAuth2 / OIDC / API Key / SSO<br>Token 签发与轮换<br>多租户身份隔离</div>
+        </div>
+        <div style="flex:1; min-width:150px;">
+          <div style="font-size:11px; color:#7eb8e0; font-weight:bold; margin-bottom:4px;">限流与配额</div>
+          <div style="font-size:10px; color:#94a3b8;">Per-user / per-agent 限流<br>Token 用量配额<br>并发连接数控制</div>
+        </div>
+        <div style="flex:1; min-width:150px;">
+          <div style="font-size:11px; color:#7eb8e0; font-weight:bold; margin-bottom:4px;">路由与协议</div>
+          <div style="font-size:10px; color:#94a3b8;">请求路由 & 负载均衡<br>协议转换 (REST↔gRPC↔WS↔SSE)<br>X-Session-Id 持久会话</div>
+        </div>
+        <div style="flex:1; min-width:150px;">
+          <div style="font-size:11px; color:#7eb8e0; font-weight:bold; margin-bottom:4px;">发布与治理</div>
+          <div style="font-size:10px; color:#94a3b8;">灰度发布 & 流量染色<br>版本管理 & API 废弃策略<br>请求日志 & 审计追踪</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow">&#9660; &#9660; &#9660;</div>
+
+<!-- Layer 2: Edge -->
+<div class="layer l-edge">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L2</span> 端侧感知与执行层 <span class="tag">情境感知 · 本地执行 · 交互渲染 · 隐私管理 | 不涉及端侧推理</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">运行在用户终端设备上的感知和执行运行时。负责采集情境信号、执行云端下发的任务指令、渲染交互界面、管理本地隐私数据。与云端形成"感知上报 → 云端决策 → 端侧执行 → 反馈学习"的闭环。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3>情境感知引擎</h3>
+        <ul>
+          <li>GPS / 地理围栏 / 位置变化</li>
+          <li>日历 / 日程 / 提醒事项监听</li>
+          <li>系统传感器 (运动, 光感, 电量)</li>
+          <li>屏幕状态 / App 使用行为</li>
+          <li>消息流监听 (用户授权)</li>
+          <li>情境信号聚合 & 上报</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>本地工具执行引擎</h3>
+        <ul>
+          <li>设备工具注册表 (文件/日历/通讯录/相册/摄像头)</li>
+          <li>设备权限 & 授权管控</li>
+          <li>MCP Server (暴露本地工具给云端调用)</li>
+          <li>App 间调用 (Deep Link / Intent / URL Scheme)</li>
+          <li>剪贴板 / 通知 / 系统设置</li>
+          <li>离线工具执行 & 结果缓存</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>端侧运行时</h3>
+        <ul>
+          <li>MCP 协议引擎 (端云工具桥梁)</li>
+          <li>轻量 Agent 执行器 (云端指令执行)</li>
+          <li>离线任务队列 & 重试</li>
+          <li>端云双向通信 (WS / SSE)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>交互与渲染</h3>
+        <ul>
+          <li>Feed 卡片流 UI</li>
+          <li>主动推送消息展示</li>
+          <li>一键执行交互 (确认/回复/预约)</li>
+          <li>语音 / 文本 / 多模态输入</li>
+          <li>跨端一致体验</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>本地数据管理</h3>
+        <ul>
+          <li>隐私数据沙箱 (通讯录/消息/健康)</li>
+          <li>端云双向同步引擎</li>
+          <li>本地缓存 & 离线存储</li>
+          <li>数据脱敏 & 授权管控</li>
+          <li>任务执行结果 & 反馈上报</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow">&#9660; 感知上报 &nbsp;&nbsp;&nbsp;&nbsp; &#9650; 决策下发</div>
+
+<!-- Layer 3: Cloud Platform -->
+<div class="layer l-cloud">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L3</span> 云端平台层 <span class="tag">编排 · 推理 · 记忆 · 工具 · 感知 · 演进 · 市场</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">云端核心引擎。负责任务编排、LLM 推理、深度记忆、云端工具调用与信息感知、主动推送决策、Agent 自演进和生态市场运营。管理面（API Server）和执行面（Actor Pool）分离。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3>Agent 运行时</h3>
+        <ul>
+          <li>DAG 图执行器 (Graph Walker)</li>
+          <li>节点类型: LLM / Tool / Router / SubAgent / Transform</li>
+          <li>Session 状态管理</li>
+          <li>执行追踪 & 回放 (Trace)</li>
+          <li>Agent 版本管理 & 回滚</li>
+          <li>Agent 配置热加载</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>Orchestrator 编排引擎</h3>
+        <ul>
+          <li>Task Planner (意图解析 + 任务拆解)</li>
+          <li>Agent Router (智能路由 + 选择)</li>
+          <li>多 Agent 协同 (Sequential / Parallel / Supervisor)</li>
+          <li>Result Aggregator (结果聚合 + 冲突解决)</li>
+          <li>CEL 条件表达式引擎</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>云端工具引擎</h3>
+        <ul>
+          <li>内置工具集 (搜索/抓取/HTTP/代码执行)</li>
+          <li>MCP Server 调用 (云端工具链)</li>
+          <li>外部 API 集成 (天气/地图/航班/汇率/邮件/日历)</li>
+          <li>代码执行沙箱 (Python / Shell)</li>
+          <li>Tool Registry (注册/发现/版本管理)</li>
+          <li>调用本地工具 (via MCP → 端侧)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>Skills 运行时</h3>
+        <ul>
+          <li>Skill 加载 & 执行引擎</li>
+          <li>Skill 依赖解析 & 多工具编排</li>
+          <li>Skill 配置 & 参数注入</li>
+          <li>Skill 版本管理 & 热更新</li>
+          <li>Skill 权限 & 执行沙箱</li>
+          <li>Skill 执行监控 & 日志</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>深度记忆系统</h3>
+        <ul>
+          <li>短期记忆 (Session 上下文)</li>
+          <li>长期记忆 (用户画像 + 偏好)</li>
+          <li>情景记忆 (执行历史 + 关联)</li>
+          <li>知识图谱 (结构化关系网络)</li>
+          <li>Embedding 向量检索</li>
+          <li>记忆压缩 & 蒸馏 & 遗忘</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>主动推送引擎</h3>
+        <ul>
+          <li>情境触发器 (时间/地点/事件/行为/云端信号)</li>
+          <li>推送决策模型 (该不该推/推什么/何时推)</li>
+          <li>推送频率 & 优先级 & 疲劳度控制</li>
+          <li>多通道下发 (Push/WS/Bot/邮件)</li>
+          <li>推送效果追踪 & 反馈闭环</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>自演进引擎</h3>
+        <ul>
+          <li>Prompt 优化 (变体生成 + A/B 测试)</li>
+          <li>架构演化 (GraphDiff 提议 + 审批)</li>
+          <li>知识积累 (执行学习 + 压缩)</li>
+          <li>RLHF (用户反馈强化学习)</li>
+          <li>Agent 健康评分 (0-100)</li>
+          <li>演化策略 & 安全约束 & 回滚</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>LLM 网关</h3>
+        <ul>
+          <li>多 Provider 路由 (OpenAI / Anthropic / GLM / Ollama)</li>
+          <li>Fallback & 重试 & 熔断</li>
+          <li>Token 预算 & 成本追踪</li>
+          <li>Prompt Cache & 语义去重</li>
+          <li>流式背压控制</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>调度 & 执行基础设施</h3>
+        <ul>
+          <li>API Server (管理面, K8s HPA)</li>
+          <li>Actor Pool (执行面, 热池 Warm Pool)</li>
+          <li>Scheduler (请求路由 + 优先队列 + 背压)</li>
+          <li>Affinity (亲和性复用, 减少冷启动)</li>
+          <li>Cron 定时调度 (分布式锁)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>Agent 市场（用户侧）</h3>
+        <ul>
+          <li>完整 Agent 发现 / 浏览 / 搜索</li>
+          <li>一键安装 & 配置</li>
+          <li>分类：效率 / 生活 / 学习 / 健康 / 财务</li>
+          <li>评分 / 评价 / 推荐</li>
+          <li>订阅 / 按次付费</li>
+          <li>类比：App Store</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>Skill 市场（开发者侧）</h3>
+        <ul>
+          <li>Skill 模块发布 / 审核 / 版本管理</li>
+          <li>MCP Server 注册 & 分发</li>
+          <li>SKILL.md 开放格式规范</li>
+          <li>开发者工具 & SDK</li>
+          <li>收入分成 & 结算</li>
+          <li>类比：npm / Plugin Store</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow">&#9660; &#9660; &#9660;</div>
+
+<!-- Layer 4: Data & Storage -->
+<div class="layer l-data">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L4</span> 数据与存储层 <span class="tag">三层存储 + 消息总线</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">三层存储架构（结构化 + 缓存 + 对象），辅以消息队列实现异步解耦和事件驱动。所有数据严格按 UserID/AgentID 隔离。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3>结构化存储 (PostgreSQL)</h3>
+        <ul>
+          <li>用户 & API Key</li>
+          <li>Agent 元数据 & 版本</li>
+          <li>演进记录 & 提议</li>
+          <li>Cron 作业定义</li>
+          <li>NoSQL 兼容模式 (无 FK/Join)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>缓存层 (Redis Cluster)</h3>
+        <ul>
+          <li>Session 状态 (TTL)</li>
+          <li>Actor Pool 状态 & 亲和性</li>
+          <li>分布式锁 (Cron Leader / VFS)</li>
+          <li>Pub/Sub (Agent 间通信)</li>
+          <li>Agent 健康评分缓存</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>对象存储 (S3)</h3>
+        <ul>
+          <li>执行轨迹 (Trace JSON)</li>
+          <li>知识条目 & 嵌入向量</li>
+          <li>Agent 配置快照 (版本化)</li>
+          <li>Prompt 变体存储</li>
+          <li>用户文件 (VFS)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>向量数据库</h3>
+        <ul>
+          <li>知识检索 (Embedding Search)</li>
+          <li>用户画像向量</li>
+          <li>语义相似度匹配</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>消息队列 (Kafka / NATS)</h3>
+        <ul>
+          <li>执行事件流 (异步)</li>
+          <li>演进引擎输入管道</li>
+          <li>推送引擎事件触发</li>
+          <li>审计日志流</li>
+          <li>跨服务解耦</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow">&#9660; &#9660; &#9660;</div>
+
+<!-- Layer 5: Infrastructure -->
+<div class="layer l-infra">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L5</span> 基础设施层 <span class="tag">K8s + 可观测性 + CI/CD</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">云原生基础设施，基于 Kubernetes 编排，包含可观测性、CI/CD 和多区域部署能力。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3>容器编排 (K8s)</h3>
+        <ul>
+          <li>Server Deployment + HPA</li>
+          <li>Actor Pool (动态 Pod 管理)</li>
+          <li>NetworkPolicy (沙箱隔离)</li>
+          <li>RBAC & ServiceAccount</li>
+          <li>Secrets 管理 (Vault)</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>可观测性</h3>
+        <ul>
+          <li>Metrics (Prometheus + Grafana)</li>
+          <li>Tracing (OpenTelemetry + Jaeger)</li>
+          <li>Logging (slog + ELK/Loki)</li>
+          <li>告警规则 & 值班通知</li>
+          <li>SLI/SLO 定义</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>CI/CD & 发布</h3>
+        <ul>
+          <li>CI Pipeline (Build/Test/Lint)</li>
+          <li>容器镜像构建 & 推送</li>
+          <li>蓝绿 / 金丝雀发布</li>
+          <li>Feature Flag (渐进发布)</li>
+          <li>Staging 环境</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>多区域 & 高可用</h3>
+        <ul>
+          <li>多 AZ 部署</li>
+          <li>数据库主从复制</li>
+          <li>S3 跨区域同步</li>
+          <li>CDN (静态资源 + 文件)</li>
+          <li>灾备 & 故障切换</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- main-content -->
+</div><!-- arch-wrapper -->
+
+<!-- Security Layer (cross-cutting, detailed) -->
+<div class="layer l-security" style="margin-top: 20px;">
+  <div class="layer-header" onclick="toggle(this)">
+    <h2><span>L0</span> 安全与治理层 <span class="tag">全局贯穿 | 跨所有层</span></h2>
+    <span class="arrow">&#9654;</span>
+  </div>
+  <div class="layer-body">
+    <p class="desc">安全与治理不是单独一层，而是贯穿所有层的横切关注点。包含身份认证、权限管理、数据安全、AI 安全、合规审计五大域。</p>
+    <div class="subsystems">
+      <div class="subsystem">
+        <h3>身份认证 (Authentication)</h3>
+        <ul>
+          <li>OAuth2 / OIDC 统一认证</li>
+          <li>API Key 签发 & 管理</li>
+          <li>SSO 企业单点登录</li>
+          <li>Token 签发 / 刷新 / 轮换 / 撤销</li>
+          <li>多因素认证 (MFA)</li>
+          <li>设备指纹 & 可信设备管理</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>权限管理 (Authorization)</h3>
+        <ul>
+          <li>RBAC 角色权限模型</li>
+          <li>API Key Scope 控制 (读/写/执行)</li>
+          <li>组织 / 团队 / 成员层级</li>
+          <li>Agent 级别权限 (谁能用/谁能改)</li>
+          <li>Tool & Skill 执行权限</li>
+          <li>资源配额 & 用量策略</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>数据安全</h3>
+        <ul>
+          <li>Tenant 数据严格隔离</li>
+          <li>传输加密 (TLS 1.3)</li>
+          <li>静态加密 (AES-256)</li>
+          <li>PII 检测 & 自动脱敏</li>
+          <li>数据生命周期管理 & 过期清除</li>
+          <li>VFS 沙箱 & 文件访问控制</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>AI 安全 (Guardrails)</h3>
+        <ul>
+          <li>Prompt Injection 防御</li>
+          <li>输出内容审核 (Content Moderation)</li>
+          <li>有害内容过滤 & 分级</li>
+          <li>Agent 行为约束 (安全策略边界)</li>
+          <li>执行沙箱 (cgroup / 网络 / 文件系统)</li>
+          <li>Tool 调用风险评估</li>
+        </ul>
+      </div>
+      <div class="subsystem">
+        <h3>合规与审计</h3>
+        <ul>
+          <li>操作审计日志 (不可篡改)</li>
+          <li>数据合规 (GDPR / 个保法 / CCPA)</li>
+          <li>模型版本管理 & 溯源</li>
+          <li>Agent 演化审批流</li>
+          <li>执行回放 & 取证</li>
+          <li>合规报告自动生成</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <h3>图例</h3>
+  <div class="legend-grid">
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>L1 多端接入层 — 用户触点 + 协议 + 生态</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>L2 端侧感知与执行层 — 情境感知 + 本地执行 + 交互渲染 + 隐私管理</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>L3 云端平台层 — 编排/推理/记忆/工具/感知/演进/市场</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>L4 数据与存储层 — 三层存储 + 消息</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>L5 基础设施层 — K8s / 可观测性</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>L0 安全与治理 — 认证/授权/数据/AI安全/合规</div>
+  </div>
+</div>
+
+<!-- Architecture Notes -->
+<div class="notes">
+  <h3>架构设计原则</h3>
+  <p>
+    <strong>1. 端云协同闭环</strong>：端侧感知 → 云端决策 → 端侧执行 → 反馈学习，形成完整数据闭环。<br>
+    <strong>2. OpenClaw 基座 + PeriX 增强</strong>：利用 OpenClaw 的 MCP 协议和 13K+ Skills 生态作为端侧引擎，PeriX 在云端构建编排、记忆、演进等核心壁垒。<br>
+    <strong>3. 双进程分离</strong>：API Server 负责管理面（CRUD、认证、网关），Actor Pool 负责执行面（Agent 运行、LLM 调用、工具执行），解耦扩展。<br>
+    <strong>4. 三层存储分治</strong>：结构化数据 → PostgreSQL，热数据 → Redis，大对象 → S3，各尽其责。NoSQL 兼容模式确保未来可切换到分布式存储。<br>
+    <strong>5. 安全纵深防御</strong>：从网关认证 → 数据隔离 → AI 护栏 → 沙箱执行 → 审计日志，层层设防。<br>
+    <strong>6. 事件驱动解耦</strong>：消息队列连接执行层、演进引擎、推送引擎，异步处理，降低耦合。<br>
+    <strong>7. 自演进闭环</strong>：执行 → 反馈 → 演化 → 验证 → 上线，Agent 持续自我优化。
+  </p>
+</div>
+
+<script>
+function toggle(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('.arrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+// Auto-open all on load
+document.querySelectorAll('.layer-header').forEach(h => toggle(h));
+</script>
+
+</body>
+</html>
